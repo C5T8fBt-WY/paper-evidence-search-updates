@@ -51,9 +51,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - name: Assert immutable Releases are enabled
-        shell: bash
-        run: test "$(gh api "repos/$GITHUB_REPOSITORY/immutable-releases" --jq .enabled)" = true
       - name: Validate update input and build inactive site
         run: >-
           python scripts/build_update_site.py build
@@ -79,6 +76,7 @@ jobs:
               --title "Paper Evidence Search $version" \
               --notes "Mozilla-signed unlisted Firefox update $version."
           fi
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .immutable)" = true
       - name: Verify the anonymous release download
         run: >-
           python scripts/build_update_site.py verify-release
