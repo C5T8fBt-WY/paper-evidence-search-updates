@@ -85,6 +85,10 @@ def build_site(repository: Path, output: Path, *, tag: str) -> dict[str, Any]:
     releases.sort(
         key=lambda release: tuple(int(part) for part in release["version"].split("."))
     )
+    if releases[-1]["release_tag"] != tag:
+        raise UpdateSiteError(
+            f"Tag {tag!r} does not identify the newest staged version"
+        )
     updates = [
         {
             "version": release["version"],

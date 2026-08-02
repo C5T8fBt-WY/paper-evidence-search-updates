@@ -2,52 +2,79 @@ name: Publish Firefox update
 
 on:
   push:
+    branches: [main]
     tags:
       - "firefox-v*"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing firefox-v* tag to recover using the current main workflow
+        required: true
+        type: string
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: firefox-update
   cancel-in-progress: false
 
 jobs:
-  publish:
+  test:
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - run: python -m unittest discover -s tests -v
+      - run: python -m py_compile scripts/build_update_site.py tests/test_build_update_site.py
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/firefox-v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Assert immutable Releases are enabled
+        shell: bash
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/immutable-releases" --jq .enabled)" = true
       - name: Validate update input and build inactive site
         run: >-
           python scripts/build_update_site.py build
           --repository .
           --output site
-          --tag "$GITHUB_REF_NAME"
+          --tag "$RELEASE_TAG"
       - name: Create immutable versioned release
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#firefox-v}"
+          version="${RELEASE_TAG#firefox-v}"
           metadata="incoming/$version/release.json"
           asset_name="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["asset_name"])' "$metadata")"
           asset_path="incoming/$version/$asset_name"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             verify_dir="$RUNNER_TEMP/existing-release"
             mkdir -p "$verify_dir"
-            gh release download "$GITHUB_REF_NAME" --pattern "$asset_name" --dir "$verify_dir"
+            gh release download "$RELEASE_TAG" --pattern "$asset_name" --dir "$verify_dir"
             cmp "$asset_path" "$verify_dir/$asset_name"
           else
-            gh release create "$GITHUB_REF_NAME" "$asset_path#$asset_name" \
+            gh release create "$RELEASE_TAG" "$asset_path#$asset_name" \
               --verify-tag \
               --title "Paper Evidence Search $version" \
               --notes "Mozilla-signed unlisted Firefox update $version."
@@ -55,7 +82,7 @@ jobs:
       - name: Verify the anonymous release download
         run: >-
           python scripts/build_update_site.py verify-release
-          --metadata "incoming/${GITHUB_REF_NAME#firefox-v}/release.json"
+          --metadata "incoming/${RELEASE_TAG#firefox-v}/release.json"
           --timeout-seconds 180
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4

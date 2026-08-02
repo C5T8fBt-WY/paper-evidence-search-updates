@@ -52,6 +52,33 @@ class UpdateSiteTests(unittest.TestCase):
         self.assertEqual(update["version"], self.version)
         self.assertRegex(update["update_hash"], r"^sha256:[0-9a-f]{64}$")
 
+    def test_rejects_release_tag_older_than_latest_staged_version(self) -> None:
+        version = "0.2.2"
+        tag = f"firefox-v{version}"
+        asset_name = f"paper-evidence-search-{version}.xpi"
+        version_dir = self.repository / "incoming" / version
+        version_dir.mkdir(parents=True)
+        payload = b"newer-signed-xpi"
+        (version_dir / asset_name).write_bytes(payload)
+        metadata = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+        metadata.update(
+            version=version,
+            release_tag=tag,
+            asset_name=asset_name,
+            sha256=hashlib.sha256(payload).hexdigest(),
+            update_link=(
+                "https://github.com/C5T8fBt-WY/paper-evidence-search-updates/"
+                f"releases/download/{tag}/{asset_name}"
+            ),
+            size=len(payload),
+        )
+        (version_dir / "release.json").write_text(
+            json.dumps(metadata), encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(UpdateSiteError, "newest staged version"):
+            build_site(self.repository, self.repository / "site", tag=self.tag)
+
     def test_rejects_tampered_xpi(self) -> None:
         asset = self.metadata_path.parent / self.asset_name
         asset.write_bytes(b"tampered")
