@@ -1,0 +1,11 @@
+{
+  "addon_id": "iclr-paper-search@mynews.local",
+  "asset_name": "paper-evidence-search-0.2.1.xpi",
+  "release_tag": "firefox-v0.2.1",
+  "schema_version": 1,
+  "sha256": "7331b5053283ef58599c43b266fbafca753f70bf4ffd80ef29a85f9f8766be29",
+  "size": 20226,
+  "update_link": "https://github.com/C5T8fBt-WY/paper-evidence-search-updates/releases/download/firefox-v0.2.1/paper-evidence-search-0.2.1.xpi",
+  "update_url": "https://c5t8fbt-wy.github.io/paper-evidence-search-updates/updates.json",
+  "version": "0.2.1"
+}
