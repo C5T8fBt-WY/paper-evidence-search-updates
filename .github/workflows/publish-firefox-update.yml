@@ -1,0 +1,74 @@
+name: Publish Firefox update
+
+on:
+  push:
+    tags:
+      - "firefox-v*"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: firefox-update
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Validate update input and build inactive site
+        run: >-
+          python scripts/build_update_site.py build
+          --repository .
+          --output site
+          --tag "$GITHUB_REF_NAME"
+      - name: Create immutable versioned release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#firefox-v}"
+          metadata="incoming/$version/release.json"
+          asset_name="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["asset_name"])' "$metadata")"
+          asset_path="incoming/$version/$asset_name"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            verify_dir="$RUNNER_TEMP/existing-release"
+            mkdir -p "$verify_dir"
+            gh release download "$GITHUB_REF_NAME" --pattern "$asset_name" --dir "$verify_dir"
+            cmp "$asset_path" "$verify_dir/$asset_name"
+          else
+            gh release create "$GITHUB_REF_NAME" "$asset_path#$asset_name" \
+              --verify-tag \
+              --title "Paper Evidence Search $version" \
+              --notes "Mozilla-signed unlisted Firefox update $version."
+          fi
+      - name: Verify the anonymous release download
+        run: >-
+          python scripts/build_update_site.py verify-release
+          --metadata "incoming/${GITHUB_REF_NAME#firefox-v}/release.json"
+          --timeout-seconds 180
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy update manifest last
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Verify the anonymous update manifest
+        shell: bash
+        run: |
+          page_url="${{ steps.deployment.outputs.page_url }}"
+          python scripts/build_update_site.py verify-url \
+            --url "${page_url%/}/updates.json" \
+            --expected site/updates.json \
+            --timeout-seconds 180
